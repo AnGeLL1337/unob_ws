@@ -5,6 +5,7 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions
 from selenium.webdriver import Chrome, ChromeOptions
 import re
+import json
 
 import getpass
 # password = getpass.getpass()
@@ -38,10 +39,14 @@ def remove_chars(string, chars):
 def main():
     data = get_data("https://apl.unob.cz/planovanivyuky/api/read/atributy")
     
+    json_data_pattern = re.compile(r'"kindId":90}],(.*?),"proposals"')
+    json_data = json_data_pattern.findall(data)
+    with open("data.json", "w") as f:
+        json.dump(json_data, f, indent=4)
+    
     pattern = re.compile(r'"teachers":(.*?),"proposals"')
-    
     matches = pattern.findall(data)
-    
+        
     if matches:
         userData = matches[0].strip()
         print("Match found.")
