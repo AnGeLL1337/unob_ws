@@ -37,7 +37,10 @@ def remove_chars(string, chars):
     return result
     
 def main():
-    data = get_data("https://apl.unob.cz/planovanivyuky/api/read/atributy")
+    with open("personal.json") as f:
+        personal = json.load(f)
+    url = personal['url']
+    data = get_data(url)
     
     json_data_pattern = re.compile(r'"kindId":90}],(.*?),"proposals"')
     json_data = json_data_pattern.findall(data)
