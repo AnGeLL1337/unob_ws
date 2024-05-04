@@ -8,19 +8,15 @@ import re
 import json
 
 import getpass
-# password = getpass.getpass()
 
-# driver = webdriver.Chrome()
-
-def get_data(url) -> list:
+def get_data(url1) -> list:
     browser_options = ChromeOptions()
     browser_options.headless = True
     
     driver = Chrome(options=browser_options)
-    driver.get(url)
+    driver.get(url1)
     
     data = driver.page_source
-    
     driver.quit()
     
     return data
@@ -39,44 +35,52 @@ def remove_chars(string, chars):
 def main():
     with open("personal.json") as f:
         personal = json.load(f)
-    url = personal['url']
-    data = get_data(url)
+    loginUrl = personal["loginUrl"]
+    url1 = personal['url1']
+    url2 = personal['url2']
+    user = personal['user']
+    password = personal['password']
     
-    json_data_pattern = re.compile(r'"kindId":90}],(.*?),"proposals"')
-    json_data = json_data_pattern.findall(data)
-    with open("data.json", "w") as f:
-        json.dump(json_data, f, indent=4)
+    driver = Chrome()
+    driver.get(loginUrl)
     
-    pattern = re.compile(r'"teachers":(.*?),"proposals"')
-    matches = pattern.findall(data)
+    username_field = driver.find_element(By.NAME, "Username")
+    password_field = driver.find_element(By.NAME, "Password")
+    
+    username_field.send_keys(user)
+    password_field.send_keys(password)
+         
+    submit = driver.find_element(By.NAME, "button")
+    submit.click()
+    #password_field.submit()
+    
+    data = get_data(url1)
+    
+    print(data)
+    
+    # json_data_pattern = re.compile(r'7F83F655-BC00-11ED-AF62-EBF700000000","22823"]}],(.*?),"classrooms"')
+    # json_data = json_data_pattern.findall(data)
+    # with open("data.json", "w") as f:
+    #     json.dump(json_data, f, indent=4)
+    
+    # pattern = re.compile(r'"teachers":(.*?)],"classrooms"')
+    # matches = pattern.findall(data)
         
-    if matches:
-        userData = matches[0].strip()
-        print("Match found.")
-    else:
-        print("Not match found.")
+    # if matches:
+    #     userData = matches[0].strip()
+    #     print("Match found.")
+    # else:
+    #     print("Not match found.")
         
-    userDataSplits = userData.split("},{")
+    # userDataSplits = userData.split("},{")
     
-    for userDataSplit in userDataSplits:
-        if userDataSplit.count(",") == 3:
-            user_id, user_name, department_id, academic = userDataSplit.split(",")
-            user_id  = remove_keyword(user_id, '"id":')
-            user_name = remove_keyword(user_name, '"name":')
-            user_name = remove_chars(user_name, '"')
-            department_id = remove_keyword(department_id, '"departmentId":')
-            academic = remove_keyword(academic, '"academic":')
-            academic = remove_chars(academic, '"')
-            print(f"Id: {user_id}| Name: {user_name}| DepartmentId: {department_id}| Academic: {academic}")
-        else:
-            user_id, user_name, department_id = userDataSplit.split(",")
-            user_id = remove_chars(user_id, '[{')
-            user_id  = remove_keyword(user_id, '"id":')
-            user_name = remove_keyword(user_name, '"name":')
-            user_name = remove_chars(user_name, '"')
-            department_id = remove_keyword(department_id, '"departmentId":')
-            department_id = remove_chars(department_id, '}]')
-            print(f"Id: {user_id}| Name: {user_name}| DepartmentId: {department_id}")
+    # for userDataSplit in userDataSplits:
+    #     #user_id, user_name = userDataSplit.split(",")
+    #     #user_id  = remove_keyword(user_id, '"id":')
+    #     #user_name = remove_keyword(user_name, '"name":')
+    #     #user_name = remove_chars(user_name, '"')
+    #     #print(f"Id: {user_id}| Name: {user_name}")
+    #     print(userDataSplit)
         
     
 if __name__ == '__main__':
@@ -89,7 +93,7 @@ if __name__ == '__main__':
 
 
 
-# driver.get("https://apl.unob.cz/planovanivyuky/api/read/atributy")
+# driver.get("url")
 
 # elem = driver.find_element(By.ID, "userNameInput")
 # elem.clear()
@@ -105,7 +109,7 @@ if __name__ == '__main__':
 # elem.click()
 
 
-# driver.get("https://intranet.web.cz/aplikace/SitePages/DomovskaStranka.aspx")
+# driver.get("url")
 
 # # Seznam akreditovanych programu
 # # elem = driver.find_element(By.ID, "ctl00_ctl40_g_ba0590ba_842f_4a3a_b2ea_0c665ea80655_ctl00_LvApplicationGroupList_ctrl0_ctl00_LvApplicationsList_ctrl7_btnApp")
@@ -116,3 +120,4 @@ if __name__ == '__main__':
 
 # assert "No results found." not in driver.page_source
 # driver.close()
+
