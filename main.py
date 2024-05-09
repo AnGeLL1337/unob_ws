@@ -4,22 +4,21 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions
 from selenium.webdriver import Chrome, ChromeOptions
+from bs4 import BeautifulSoup
 import re
 import json
+import time
+import os
 
 import getpass
 
-def get_data(url1) -> list:
-    browser_options = ChromeOptions()
-    browser_options.headless = True
+def get_id(url1, driver) -> list:
     
-    driver = Chrome(options=browser_options)
     driver.get(url1)
-    
-    data = driver.page_source
+    ids = driver.page_source
     driver.quit()
     
-    return data
+    return ids
 
 def remove_keyword(string, keyword):
     string = string.replace(keyword,"")
@@ -31,93 +30,178 @@ def remove_chars(string, chars):
         if char not in chars:
             result += char
     return result
+
+def get_data(finalurl, driver2) -> list:
+    #print(finalurl)
+    driver2.get(finalurl)
+    data = BeautifulSoup(driver2.page_source, 'html.parser')
+    elems = data.find_all("div", class_="col text-end")
+    num_elems = len(elems) - 1
+    #print(num_elems)
+    if num_elems >= 13:
+        name = elems[0].text.strip()
+        title = elems[1].text.strip() + " / " + elems[2].text.strip()
+        rank = elems[3].text.strip()
+        department = elems[4].text.strip()
+        email = elems[5].text.strip()
+        phone = elems[6].text.strip()
+        mobile = elems[7].text.strip()
+        data_box = elems[8].text.strip()
+        campus = elems[9].text.strip()
+        building_room = elems[10].text.strip()
+        faculty = elems[11].text.strip()
+        taught_groups = data.find_all("div", id="StudiumSkupina")
+        taught_group = [group.text.strip() for group in taught_groups]
+    elif num_elems == 12:
+        name = elems[0].text.strip()
+        title = elems[1].text.strip()
+        rank = elems[2].text.strip()
+        department = elems[3].text.strip()
+        email = elems[4].text.strip()
+        phone = elems[5].text.strip()
+        mobile = elems[6].text.strip()
+        data_box = elems[7].text.strip()
+        campus = elems[8].text.strip()
+        building_room = elems[9].text.strip()
+        faculty = elems[10].text.strip()
+        taught_groups = data.find_all("div", id="StudiumSkupina")
+        taught_group = [group.text.strip() for group in taught_groups]
+    elif num_elems == 11:
+        name = elems[0].text.strip()
+        title = elems[1].text.strip()
+        rank = None
+        department = elems[2].text.strip()
+        email = elems[3].text.strip()
+        phone = elems[4].text.strip()
+        mobile = elems[5].text.strip()
+        data_box = elems[6].text.strip()
+        campus = elems[7].text.strip()
+        building_room = elems[8].text.strip()
+        faculty = elems[9].text.strip()
+        taught_groups = data.find_all("div", id="StudiumSkupina")
+        taught_group = [group.text.strip() for group in taught_groups]
+    elif num_elems <= 10:
+        name = elems[0].text.strip()
+        title = None
+        rank = None
+        department = elems[1].text.strip()
+        email = elems[2].text.strip()
+        phone = elems[3].text.strip()
+        mobile = elems[4].text.strip()
+        data_box = elems[5].text.strip()
+        campus = elems[6].text.strip()
+        building_room = elems[7].text.strip()
+        faculty = elems[8].text.strip()
+        taught_groups = data.find_all("div", id="StudiumSkupina")
+        taught_group = [group.text.strip() for group in taught_groups]
+    
+    return name, title, rank, department, email, phone, mobile, data_box, campus, building_room, faculty, taught_group
     
 def main():
     with open("personal.json") as f:
         personal = json.load(f)
-    loginUrl = personal["loginUrl"]
+    login1Url = personal["login1Url"]
+    login2Url = personal["login2Url"]
     url1 = personal['url1']
     url2 = personal['url2']
     user = personal['user']
     password = personal['password']
     
     driver = Chrome()
-    driver.get(loginUrl)
+    driver.get(login1Url)
+    driver.get(login1Url)
     
-    username_field = driver.find_element(By.NAME, "Username")
-    password_field = driver.find_element(By.NAME, "Password")
+    username_field = driver.find_element(By.ID, "floatingInput")
+    password_field = driver.find_element(By.ID, "floatingPassword")
     
     username_field.send_keys(user)
     password_field.send_keys(password)
          
     submit = driver.find_element(By.NAME, "button")
     submit.click()
-    #password_field.submit()
     
-    data = get_data(url1)
+    ids = get_id(url1, driver)
     
-    print(data)
-    
-    # json_data_pattern = re.compile(r'7F83F655-BC00-11ED-AF62-EBF700000000","22823"]}],(.*?),"classrooms"')
-    # json_data = json_data_pattern.findall(data)
-    # with open("data.json", "w") as f:
-    #     json.dump(json_data, f, indent=4)
-    
-    # pattern = re.compile(r'"teachers":(.*?)],"classrooms"')
-    # matches = pattern.findall(data)
+    pattern = re.compile(r'"teachers":(.*?)],"classrooms"')
+    matches = pattern.findall(ids)
         
-    # if matches:
-    #     userData = matches[0].strip()
-    #     print("Match found.")
-    # else:
-    #     print("Not match found.")
+    if matches:
+        userID = matches[0].strip()
+        print("Match found.")
+    else:
+        print("Not match found.")
         
-    # userDataSplits = userData.split("},{")
+    userIDSplits = userID.split("},{")
     
-    # for userDataSplit in userDataSplits:
-    #     #user_id, user_name = userDataSplit.split(",")
-    #     #user_id  = remove_keyword(user_id, '"id":')
-    #     #user_name = remove_keyword(user_name, '"name":')
-    #     #user_name = remove_chars(user_name, '"')
-    #     #print(f"Id: {user_id}| Name: {user_name}")
-    #     print(userDataSplit)
-        
+    with open("ids.txt", "a") as f:
+        for userIDSplit in userIDSplits:
+            user_id, user_surname, user_name = userIDSplit.split(",")
+            user_id  = remove_keyword(user_id, '"id":')
+            user_id  = remove_chars(user_id, '[{')
+            f.write(user_id + "\n")
     
+    print("IDs have been written.")
+    
+    driver2 = Chrome()    
+    driver2.get(login2Url)
+    driver2.get(login2Url)
+    
+    username_field = driver2.find_element(By.ID, "floatingInput")
+    password_field = driver2.find_element(By.ID, "floatingPassword")
+    
+    username_field.send_keys(user)
+    password_field.send_keys(password)
+         
+    submit = driver2.find_element(By.NAME, "button")
+    submit.click()
+    
+    data = {}
+    with open("data.json", "w") as f:
+        f.write("[\n")
+    
+    with open("ids.txt", "r") as f:
+        for line in f:
+            value = line.strip()
+            finalurl = url2 + value
+            name, title, rank, department, email, phone, mobile, data_box, campus, building_room, faculty, taught_group = get_data(finalurl, driver2)
+            
+            data = {
+                "ID" : value,
+                "Jméno" : name,
+                "Titul před / za" : title,
+                "Hodnost / Titul za" : rank,
+                "Katedra" : department,
+                "Email" : email,
+                "Telefon" : phone,
+                "Mobil" : mobile,
+                "Datová schránka" : data_box,
+                "Areál" : campus,
+                "Budova/Patro/Místnost" : building_room,
+                "Fakulta" : faculty,
+                "Seznam vyučovaných skupin" : taught_group
+            }
+
+            with open("data.json", "a", encoding="utf-8") as f:
+                f.write(json.dumps(data, ensure_ascii=False, indent=2) + ",\n")
+    
+    
+    # --- Part of code that erases last ',' between data of each user if there is no next
+    with open("data.json", "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    if lines:
+        last_line = lines[-1].strip()
+        if last_line.endswith(","):
+            lines[-1] = last_line[:-1] + "\n"
+
+    with open("data.json", "w", encoding="utf-8") as f:
+        f.writelines(lines)
+        f.write("]\n")
+    # ---
+
+    driver2.quit()
+
+
 if __name__ == '__main__':
     main()
-
-
-
-
-
-
-
-
-# driver.get("url")
-
-# elem = driver.find_element(By.ID, "userNameInput")
-# elem.clear()
-# elem.send_keys("email@web.cz")
-# elem.send_keys(Keys.RETURN)
-
-# elem = driver.find_element(By.ID, "passwordInput")
-# elem.clear()
-# elem.send_keys(password)
-# elem.send_keys(Keys.RETURN)
-
-# elem = driver.find_element(By.ID, "submitButton")
-# elem.click()
-
-
-# driver.get("url")
-
-# # Seznam akreditovanych programu
-# # elem = driver.find_element(By.ID, "ctl00_ctl40_g_ba0590ba_842f_4a3a_b2ea_0c665ea80655_ctl00_LvApplicationGroupList_ctrl0_ctl00_LvApplicationsList_ctrl7_btnApp")
-# elem = WebDriverWait(driver, 10).until(
-#         expected_conditions.presence_of_element_located((By.ID, "ctl00_ctl40_g_ba0590ba_842f_4a3a_b2ea_0c665ea80655_ctl00_LvApplicationGroupList_ctrl0_ctl00_LvApplicationsList_ctrl7_btnApp"))
-#     )
-# elem.click()
-
-# assert "No results found." not in driver.page_source
-# driver.close()
 

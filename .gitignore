@@ -1,5 +1,6 @@
 # Hidden Files
 *.json
+ids.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
