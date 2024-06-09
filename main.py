@@ -79,68 +79,71 @@ async def fetch_page_async(url, session):
 
 def parse_data(html_content) -> tuple:
     data = BeautifulSoup(html_content, 'html.parser')
-    elems = data.find_all("div", class_="col text-end")
-    print(f"Number of elements: {len(elems)}")
-    num_elems = len(elems) - 1
-
+    studium_skupinas = data.find(id="StudiumSkupinas")
+    elems1 = studium_skupinas.find_all("div", class_="col text-end")
+    kontaktni_informace = data.find(id="KontaktniInformace")
+    elems2 = kontaktni_informace.find_all("div", class_="col text-end")
+    vyucijici_clenstvi = data.find(id="VyucujiciClenstviCard")
+    elems3 = vyucijici_clenstvi.find_all("div", class_="col text-end")
+    num_elems = len(elems1) + len(elems2) + len(elems3) - 1
     if num_elems >= 13:
         return (
-            elems[0].text.strip(),
-            elems[1].text.strip() + " / " + elems[2].text.strip(),
-            elems[3].text.strip(),
-            elems[4].text.strip(),
-            elems[5].text.strip(),
-            elems[6].text.strip(),
-            elems[7].text.strip(),
-            elems[8].text.strip(),
-            elems[9].text.strip(),
-            elems[10].text.strip(),
-            elems[11].text.strip(),
+            elems1[0].text.strip(),
+            elems1[1].text.strip() + " / " + elems1[2].text.strip(),
+            elems1[3].text.strip(),
+            elems1[4].text.strip(),
+            elems2[0].text.strip(),
+            elems2[1].text.strip(),
+            elems2[2].text.strip(),
+            elems2[3].text.strip(),
+            elems2[4].text.strip(),
+            elems2[5].text.strip(),
+            elems3[0].text.strip(),
             [group.text.strip() for group in data.find_all("div", id="StudiumSkupina")]
         )
     elif num_elems == 12:
         return (
-            elems[0].text.strip(),
-            elems[1].text.strip(),
-            elems[2].text.strip(),
-            elems[3].text.strip(),
-            elems[4].text.strip(),
-            elems[5].text.strip(),
-            elems[6].text.strip(),
-            elems[7].text.strip(),
-            elems[8].text.strip(),
-            elems[9].text.strip(),
-            elems[10].text.strip(),
+            elems1[0].text.strip(),
+            elems1[1].text.strip(),
+            elems1[2].text.strip(),
+            elems1[3].text.strip(),
+            elems2[0].text.strip(),
+            elems2[1].text.strip(),
+            elems2[2].text.strip(),
+            elems2[3].text.strip(),
+            elems2[4].text.strip(),
+            elems2[5].text.strip(),
+            elems3[0].text.strip(),
             [group.text.strip() for group in data.find_all("div", id="StudiumSkupina")]
         )
     elif num_elems == 11:
         return (
-            elems[0].text.strip(),
-            elems[1].text.strip(),
+            elems1[0].text.strip(),
+            elems1[1].text.strip(),
             None,
-            elems[2].text.strip(),
-            elems[3].text.strip(),
-            elems[4].text.strip(),
-            elems[5].text.strip(),
-            elems[6].text.strip(),
-            elems[7].text.strip(),
-            elems[8].text.strip(),
-            elems[9].text.strip(),
+            elems1[2].text.strip(),
+            elems2[0].text.strip(),
+            elems2[1].text.strip(),
+            elems2[2].text.strip(),
+            elems2[3].text.strip(),
+            elems2[4].text.strip(),
+            elems2[5].text.strip(),
+            elems3[0].text.strip(),
             [group.text.strip() for group in data.find_all("div", id="StudiumSkupina")]
         )
     else:
         return (
-            elems[0].text.strip(),
+            elems1[0].text.strip(),
             None,
             None,
-            elems[1].text.strip(),
-            elems[2].text.strip(),
-            elems[3].text.strip(),
-            elems[4].text.strip(),
-            elems[5].text.strip(),
-            elems[6].text.strip(),
-            elems[7].text.strip(),
-            elems[8].text.strip(),
+            elems1[1].text.strip(),
+            elems2[0].text.strip(),
+            elems2[1].text.strip(),
+            elems2[2].text.strip(),
+            elems2[3].text.strip(),
+            elems2[4].text.strip(),
+            elems2[5].text.strip(),
+            elems3[0].text.strip(),
             [group.text.strip() for group in data.find_all("div", id="StudiumSkupina")]
         )
 
