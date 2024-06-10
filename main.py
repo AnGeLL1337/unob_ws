@@ -2,6 +2,9 @@ import json
 import re
 import uuid
 import os
+from functools import cache
+
+from async_lru import alru_cache
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -12,7 +15,161 @@ import aiohttp
 import aiofiles
 
 CACHE_DIR = 'html_cache'
+TYPEID_ID = "d00ec0b6-f27c-497b-8fc8-ddb4e2460717"
 
+
+class DBWriter:
+    def __init__(self, username="john.newbie@world.com", password="john.newbie@world.com"):
+        self.username = username
+        self.password = password
+        self.token = None
+
+    async def getToken(self):
+        if self.token:
+            return self.token
+
+        keyurl = "http://localhost:33001/oauth/login3"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(keyurl) as resp:
+                keyJson = await resp.json()
+
+            payload = {"key": keyJson["key"], "username": self.username, "password": self.password}
+            async with session.post(keyurl, json=payload) as resp:
+                tokenJson = await resp.json()
+        self.token = tokenJson.get("token", None)
+        return self.token
+
+    async def queryGQL(self, query, variables):
+        gqlurl = "http://localhost:33001/api/gql"
+        token = await self.getToken()
+        payload = {"query": query, "variables": variables}
+        cookies = {'authorization': token}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(gqlurl, json=payload, cookies=cookies) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    print(f"failed query \n{query}\n with variables {variables}".replace("'", '"'))
+                    print(f"failed resp.status={resp.status}, text={text}")
+                    raise Exception(f"Unexpected GQL response", text)
+                else:
+                    response = await resp.json()
+                    return response
+
+    async def queryGQL3(self, query, variables):
+        times = 3
+        result = None
+        for i in range(times):
+            try:
+                result = await self.queryGQL(query=query, variables=variables)
+                if result.get("errors", None) is None:
+                    return result
+                print(result)
+            except Exception as e:
+                print(f"Attempt {i+1} failed: {e}")
+            await asyncio.sleep(10)
+
+        raise Exception(f"Unable to run query={query} with variables {variables} for {times} times\n{result}".replace("'", '"'))
+
+    @cache
+    def GetQuery(self, tableName, queryType):
+        assert queryType in ["read", "readp", "create", "update"], f"unknown queryType {queryType}"
+        queryfile = f"./gqls/{tableName}/{queryType}.gql"
+        with open(queryfile, "r", encoding="utf-8") as fi:
+            lines = fi.readlines()
+        query = ''.join(lines)
+        assert query is not None, f"missing {queryType} query for table {tableName}"
+        return query
+
+    @alru_cache(maxsize=1024)
+    async def asyncTranslateID(self, outer_id, type_id):
+        query = 'query($type_id: ID!, $outer_id: String!){ result: internalId(typeidId: $type_id, outerId: $outer_id) }'
+        jsonData = await self.queryGQL3(query=query, variables={"outer_id": outer_id, "type_id": type_id})
+        data = jsonData.get("data", {"result": None})
+        result = data.get("result", None)
+        return result
+
+    @alru_cache()
+    async def getAllTypes(self):
+        query = self.GetQuery(tableName="externalidtypes", queryType="readp")
+        jsonData = await self.queryGQL3(query=query, variables={"limit": 1000})
+        data = jsonData.get("data", {"result": None})
+        result = data.get("result", None)
+        assert result is not None, f"unable to get externalidtypes"
+        asdict = {item["name"]: item["id"] for item in result}
+        return asdict
+
+    @alru_cache(maxsize=1024)
+    async def getTypeId(self, typeName):
+        alltypes = await self.getAllTypes()
+        result = alltypes.get(typeName, None)
+        assert result is not None, f"unable to get id of type {typeName}"
+        return result
+
+    async def registerID(self, inner_id, outer_id, type_id):
+        mutation = '''
+            mutation ($type_id: ID!, $inner_id: ID!, $outer_id: String!) {
+                result: externalidInsert(
+                    externalid: {innerId: $inner_id, typeidId: $type_id, outerId: $outer_id}
+                ) {
+                    msg
+                    result: externalid {
+                        id    
+                        }
+                    }
+                }
+        '''
+        jsonData = await self.queryGQL3(query=mutation, variables={"inner_id": str(inner_id), "outer_id": outer_id, "type_id": str(type_id)})
+        data = jsonData.get("data", {"result": {"msg": "fail"}})
+        msg = data["result"]["msg"]
+        if msg != "ok":
+            print(f'register ID failed ({ {"inner_id": inner_id, "outer_id": outer_id, "type_id": type_id} })\n\tprobably already registered')
+        else:
+            print(f"registered {outer_id} for {inner_id} ({type_id})")
+        return "ok"
+
+    async def Read(self, tableName, variables, outer_id=None, outer_id_type_id=None):
+        if outer_id:
+            assert outer_id_type_id is not None, f"if outer_id ({outer_id}) defined, outer_id_type_id must be defined also"
+            inner_id = await self.asyncTranslateID(outer_id=outer_id, type_id=outer_id_type_id)
+            assert inner_id is not None, f"outer_id {outer_id} od type_id {outer_id_type_id} mapping failed on table {tableName}"
+            variables = {**variables, "id": inner_id}
+
+        queryRead = self.GetQuery(tableName, "read")
+        response = await self.queryGQL3(query=queryRead, variables=variables)
+        error = response.get("errors", None)
+        assert error is None, f"error {error} during query \n{queryRead}\n with variables {variables}".replace("'", '"')
+        data = response.get("data", None)
+        assert data is not None, f"got no data during query \n{queryRead}\n with variables {variables}".replace("'", '"')
+        result = data.get("result", None)
+        return result
+
+    async def Create(self, tableName, variables, outer_id=None, outer_id_type_id=None):
+        queryType = "create"
+        if outer_id:
+            assert outer_id_type_id is not None, f"if outer_id ({outer_id}) defined, outer_id_type_id must be defined also"
+            inner_id = await self.asyncTranslateID(outer_id=outer_id, type_id=outer_id_type_id)
+
+            if inner_id:
+                print(f"outer_id ({outer_id}) defined ({outer_id_type_id}) \t on table {tableName},\t going update")
+                old_data = await self.Read(tableName=tableName, variables={"id": inner_id})
+                if old_data is None:
+                    print(f"found corrupted data, entity with id {inner_id} in table {tableName} is missing, going to create it")
+                    variables = {**variables, "id": inner_id}
+                else:
+                    variables = {**old_data, **variables, "id": inner_id}
+                    queryType = "update"
+            else:
+                print(f"outer_id ({outer_id}) undefined ({outer_id_type_id}) \t on table {tableName},\t going insert")
+                registrationResult = await self.registerID(inner_id=variables["id"], outer_id=outer_id, type_id=outer_id_type_id)
+                assert registrationResult == "ok", f"Something is really bad, ID registration failed"
+
+        query = self.GetQuery(tableName, queryType)
+        assert query is not None, f"missing {queryType} query for table {tableName}"
+        response = await self.queryGQL3(query=query, variables=variables)
+        data = response["data"]
+        result = data["result"]
+        result = result["result"]
+        return result
 
 def generate_uuid() -> str:
     return str(uuid.uuid4())
@@ -156,7 +313,7 @@ def initialize_driver():
 
 
 def get_id(url, driver):
-    print(f"Getting ID from URL: {url}")
+    print(f"Getting IDs from URL: {url}")
     driver.get(url)
     driver.get(url)  # Load the URL twice to handle the popup
     try:
@@ -195,37 +352,27 @@ def login(driver, url, username, password):
 def read_existing_systemdata():
     if os.path.exists("systemdata.json"):
         with open("systemdata.json", "r", encoding="utf-8") as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                return []
-    return []
+            return json.load(f)
+    return {"users": [], "externalids": []}
 
+def write_systemdata(data):
+    with open("systemdata.json", "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-def read_existing_external_ids():
-    if os.path.exists("external_ids.json"):
-        with open("external_ids.json", "r", encoding="utf-8") as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                return []
-    return []
-
-
-def write_systemdata_entry(entry):
-    data = read_existing_systemdata()
-    if not any(d["ID"] == entry["ID"] for d in data):
-        data.append(entry)
-        with open("systemdata.json", "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-
-def write_external_ids_entry(entry):
-    data = read_existing_external_ids()
-    if not any(d["external_id"] == entry["external_id"] for d in data):
-        data.append(entry)
-        with open("external_ids.json", "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+def transform_users_to_systemdata(users):
+    transformed_users = []
+    for user in users:
+        if "Jméno" in user:
+            # Transform user if it has the "Jméno" key
+            transformed_users.append({
+                "id": user["ID"],
+                "name": user["Jméno"].split()[1] if len(user["Jméno"].split()) > 1 else user["Jméno"],
+                "surname": user["Jméno"].split()[0] if len(user["Jméno"].split()) > 1 else "",
+                "email": user["Email"]
+            })
+        else:
+            transformed_users.append(user)
+    return transformed_users
 
 
 def main_sync():
@@ -269,7 +416,9 @@ def main_sync():
     login(driver, login2Url, user, password)
     print("Logged in, fetching data.")
 
-    external_ids_data = read_existing_external_ids()
+    systemdata = read_existing_systemdata()
+    users = systemdata["users"]
+    externalids = systemdata.get("externalids", [])
 
     with open("ids.txt", "r") as f:
         for line in f:
@@ -278,24 +427,9 @@ def main_sync():
             page_source = fetch_page_sync(finalurl, driver)
             print(f"Value: {value}, finalurl: {finalurl}, page_source: {page_source[:100]}")
             data_tuple = parse_data(page_source)
-
-            existing_entry = next((item for item in external_ids_data if item["external_id"] == value), None)
-            if existing_entry:
-                entry_id = existing_entry["id"]
-            else:
-                entry_id = generate_uuid()
-                new_external_entry = {
-                    "id": entry_id,
-                    "name": data_tuple[0],
-                    "name_en": data_tuple[0],
-                    "urlformat": finalurl,
-                    "external_id": value
-                }
-                write_external_ids_entry(new_external_entry)
-                external_ids_data.append(new_external_entry)  # Add new entry to the list
-
+            entry_id = generate_uuid()
             data_dict = {
-                "ID": entry_id,
+                "ID": entry_id,  # Added UUID as ID
                 "Jméno": data_tuple[0],
                 "Titul před / za": data_tuple[1],
                 "Hodnosť / Titul za": data_tuple[2],
@@ -309,7 +443,19 @@ def main_sync():
                 "Fakulta": data_tuple[10],
                 "Seznam vyučovaných skupin": data_tuple[11]
             }
-            write_systemdata_entry(data_dict)
+            if not any("ID" in d and d["ID"] == entry_id for d in users):
+                users.append(data_dict)
+                externalids.append({
+                    "id": generate_uuid(),
+                    "inner_id": entry_id,
+                    "outer_id": value,
+                    "typeid_id": TYPEID_ID
+                })
+
+    systemdata["users"] = transform_users_to_systemdata(users)
+    systemdata["externalids"] = externalids
+
+    write_systemdata(systemdata)
 
     print("Teachers have been written.")
     driver.quit()
@@ -322,7 +468,9 @@ async def main_async():
         personal = json.load(f)
     url2 = personal['url2']
 
-    external_ids_data = await read_existing_external_ids_async()
+    systemdata = await read_existing_systemdata_async()
+    users = systemdata["users"]
+    externalids = systemdata.get("externalids", [])
 
     async with aiohttp.ClientSession() as session:
         async with aiofiles.open("ids.txt", "r") as f:
@@ -331,24 +479,9 @@ async def main_async():
                 finalurl = url2 + value
                 page_source = await fetch_page_async(finalurl, session)
                 data_tuple = parse_data(page_source)
-
-                existing_entry = next((item for item in external_ids_data if item["external_id"] == value), None)
-                if existing_entry:
-                    entry_id = existing_entry["id"]
-                else:
-                    entry_id = generate_uuid()
-                    new_external_entry = {
-                        "id": entry_id,
-                        "name": data_tuple[0],
-                        "name_en": data_tuple[0],
-                        "urlformat": finalurl,
-                        "external_id": value
-                    }
-                    await write_external_ids_entry_async(new_external_entry)
-                    external_ids_data.append(new_external_entry)  # Add new entry to the list
-
+                entry_id = generate_uuid()
                 data_dict = {
-                    "ID": entry_id,
+                    "ID": entry_id,  # Added UUID as ID
                     "Jméno": data_tuple[0],
                     "Titul před / za": data_tuple[1],
                     "Hodnosť / Titul za": data_tuple[2],
@@ -362,7 +495,19 @@ async def main_async():
                     "Fakulta": data_tuple[10],
                     "Seznam vyučovaných skupin": data_tuple[11]
                 }
-                await write_systemdata_entry_async(data_dict)
+                if not any("ID" in d and d["ID"] == entry_id for d in users):
+                    users.append(data_dict)
+                    externalids.append({
+                        "id": generate_uuid(),
+                        "inner_id": entry_id,
+                        "outer_id": value,
+                        "typeid_id": TYPEID_ID
+                    })
+
+    systemdata["users"] = transform_users_to_systemdata(users)
+    systemdata["externalids"] = externalids
+
+    await write_systemdata_async(systemdata)
 
     print("Teachers have been written.")
 
@@ -370,42 +515,38 @@ async def main_async():
 async def read_existing_systemdata_async():
     if os.path.exists("systemdata.json"):
         async with aiofiles.open("systemdata.json", "r", encoding="utf-8") as f:
-            try:
-                content = await f.read()
-                return json.loads(content)
-            except json.JSONDecodeError:
-                return []
-    return []
+            content = await f.read()
+            return json.loads(content)
+    return {"users": [], "externalids": []}
+
+async def write_systemdata_async(data):
+    async with aiofiles.open("systemdata.json", "w", encoding="utf-8") as f:
+        await f.write(json.dumps(data, ensure_ascii=False, indent=2))
 
 
-async def write_systemdata_entry_async(entry):
-    data = await read_existing_systemdata_async()
-    if not any(d["ID"] == entry["ID"] for d in data):
-        data.append(entry)
-        async with aiofiles.open("systemdata.json", "w", encoding="utf-8") as f:
-            await f.write(json.dumps(data, ensure_ascii=False, indent=2))
+async def db_writer_async():
+    with open("systemdata.json", "r", encoding="utf-8") as f:
+        systemdata = json.load(f)
 
+    users = systemdata["users"]
+    externalids = systemdata["externalids"]
 
-async def read_existing_external_ids_async():
-    if os.path.exists("external_ids.json"):
-        async with aiofiles.open("external_ids.json", "r", encoding="utf-8") as f:
-            try:
-                content = await f.read()
-                return json.loads(content)
-            except json.JSONDecodeError:
-                return []
-    return []
+    db_writer = DBWriter()
 
+    for user in users:
+        user["id"] = user["id"]
+        await db_writer.Create(tableName="users", variables=user)
 
-async def write_external_ids_entry_async(entry):
-    data = await read_existing_external_ids_async()
-    if not any(d["external_id"] == entry["external_id"] for d in data):
-        data.append(entry)
-        async with aiofiles.open("external_ids.json", "w", encoding="utf-8") as f:
-            await f.write(json.dumps(data, ensure_ascii=False, indent=2))
+    for externalid in externalids:
+        externalid["id"] = externalid["id"]
+        externalid["inner_id"] = externalid["inner_id"]
+        externalid["typeid_id"] = externalid["typeid_id"]
+        await db_writer.registerID(inner_id=externalid["inner_id"], outer_id=externalid["outer_id"],
+                                   type_id=externalid["typeid_id"])
 
 
 if __name__ == '__main__':
-    ensure_cache_dir()
-    main_sync()
-    asyncio.run(main_async())
+    #ensure_cache_dir()
+    #main_sync()
+    #asyncio.run(main_async())
+    asyncio.run(db_writer_async())
