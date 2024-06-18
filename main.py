@@ -392,21 +392,32 @@ def main_sync():
 
     ids = get_id(url1, driver)
 
-    pattern = re.compile(r'"teachers":(.*?)],"classrooms"')
-    matches = pattern.findall(ids)
+    teachers_pattern = re.compile(r'"teachers":(.*?)],"classrooms"')
+    teachers_matches = teachers_pattern.findall(ids)
 
-    if matches:
-        userID = matches[0].strip()
-        print("Match found.")
+    if teachers_matches:
+        userID_teachers  = teachers_matches[0].strip()
+        print("Teachers match found.")
     else:
-        print("No match found.")
-        return  # Exit the function if no match is found
+        print("No teachers match found.")
+        return
 
-    userIDSplits = userID.split("},{")
+    userIDSplits = userID_teachers.split("},{")
+    
+    students_pattern = re.compile(r'"students":(.*?)],"teachers"')
+    students_matches = students_pattern.findall(ids)
+
+    if students_matches:
+        userID_students = students_matches[0].strip()
+        print("Students match found.")
+        userIDSplits += userID_students.split("},{")
+    else:
+        print("No students match found.")
+        return
 
     with open("ids.txt", "w") as f:
         for userIDSplit in userIDSplits:
-            user_id, user_surname, user_name = userIDSplit.split(",")
+            user_id = userIDSplit.split(",")
             user_id = remove_keyword(user_id, '"id":')
             user_id = remove_chars(user_id, '[{')
             f.write(user_id + "\n")
