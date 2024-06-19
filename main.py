@@ -304,7 +304,6 @@ def parse_data(html_content) -> tuple:
             [group.text.strip() for group in data.find_all("div", id="StudiumSkupina")]
         )
 
-
 def initialize_driver():
     options = webdriver.ChromeOptions()
     options.add_argument('--no-sandbox')
@@ -417,9 +416,11 @@ def main_sync():
 
     with open("ids.txt", "w") as f:
         for userIDSplit in userIDSplits:
+            print(f"Writing ID: {userIDSplit}")
             user_id = userIDSplit.split(",")
-            user_id = remove_keyword(user_id, '"id":')
+            user_id = user_id[0]
             user_id = remove_chars(user_id, '[{')
+            user_id = remove_keyword(user_id, '"id":')
             f.write(user_id + "\n")
 
     print("IDs have been written.")
@@ -522,7 +523,6 @@ async def main_async():
 
     print("Teachers have been written.")
 
-
 async def read_existing_systemdata_async():
     if os.path.exists("systemdata.json"):
         async with aiofiles.open("systemdata.json", "r", encoding="utf-8") as f:
@@ -557,7 +557,7 @@ async def db_writer_async():
 
 
 if __name__ == '__main__':
-    #ensure_cache_dir()
-    #main_sync()
-    #asyncio.run(main_async())
-    asyncio.run(db_writer_async())
+    ensure_cache_dir()
+    main_sync()
+    asyncio.run(main_async())
+    #asyncio.run(db_writer_async())
