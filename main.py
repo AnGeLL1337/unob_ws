@@ -65,10 +65,11 @@ class DBWriter:
                     return result
                 print(result)
             except Exception as e:
-                print(f"Attempt {i+1} failed: {e}")
+                print(f"Attempt {i + 1} failed: {e}")
             await asyncio.sleep(10)
 
-        raise Exception(f"Unable to run query={query} with variables {variables} for {times} times\n{result}".replace("'", '"'))
+        raise Exception(
+            f"Unable to run query={query} with variables {variables} for {times} times\n{result}".replace("'", '"'))
 
     @cache
     def GetQuery(self, tableName, queryType):
@@ -118,11 +119,13 @@ class DBWriter:
                     }
                 }
         '''
-        jsonData = await self.queryGQL3(query=mutation, variables={"inner_id": str(inner_id), "outer_id": outer_id, "type_id": str(type_id)})
+        jsonData = await self.queryGQL3(query=mutation, variables={"inner_id": str(inner_id), "outer_id": outer_id,
+                                                                   "type_id": str(type_id)})
         data = jsonData.get("data", {"result": {"msg": "fail"}})
         msg = data["result"]["msg"]
         if msg != "ok":
-            print(f'register ID failed ({ {"inner_id": inner_id, "outer_id": outer_id, "type_id": type_id} })\n\tprobably already registered')
+            print(
+                f'register ID failed ({ {"inner_id": inner_id, "outer_id": outer_id, "type_id": type_id} })\n\tprobably already registered')
         else:
             print(f"registered {outer_id} for {inner_id} ({type_id})")
         return "ok"
@@ -139,7 +142,8 @@ class DBWriter:
         error = response.get("errors", None)
         assert error is None, f"error {error} during query \n{queryRead}\n with variables {variables}".replace("'", '"')
         data = response.get("data", None)
-        assert data is not None, f"got no data during query \n{queryRead}\n with variables {variables}".replace("'", '"')
+        assert data is not None, f"got no data during query \n{queryRead}\n with variables {variables}".replace("'",
+                                                                                                                '"')
         result = data.get("result", None)
         return result
 
@@ -153,14 +157,16 @@ class DBWriter:
                 print(f"outer_id ({outer_id}) defined ({outer_id_type_id}) \t on table {tableName},\t going update")
                 old_data = await self.Read(tableName=tableName, variables={"id": inner_id})
                 if old_data is None:
-                    print(f"found corrupted data, entity with id {inner_id} in table {tableName} is missing, going to create it")
+                    print(
+                        f"found corrupted data, entity with id {inner_id} in table {tableName} is missing, going to create it")
                     variables = {**variables, "id": inner_id}
                 else:
                     variables = {**old_data, **variables, "id": inner_id}
                     queryType = "update"
             else:
                 print(f"outer_id ({outer_id}) undefined ({outer_id_type_id}) \t on table {tableName},\t going insert")
-                registrationResult = await self.registerID(inner_id=variables["id"], outer_id=outer_id, type_id=outer_id_type_id)
+                registrationResult = await self.registerID(inner_id=variables["id"], outer_id=outer_id,
+                                                           type_id=outer_id_type_id)
                 assert registrationResult == "ok", f"Something is really bad, ID registration failed"
 
         query = self.GetQuery(tableName, queryType)
@@ -170,6 +176,7 @@ class DBWriter:
         result = data["result"]
         result = result["result"]
         return result
+
 
 def generate_uuid() -> str:
     return str(uuid.uuid4())
@@ -191,30 +198,6 @@ def ensure_cache_dir():
 def get_cache_path(url):
     filename = url.split('/')[-1] + '.html'
     return os.path.join(CACHE_DIR, filename)
-
-
-def fetch_page_sync(url, driver):
-    cache_path = get_cache_path(url)
-    if os.path.exists(cache_path):
-        print(f"Using cached page: {url}")
-        with open(cache_path, 'r', encoding='utf-8') as file:
-            return file.read()
-
-    print(f"Fetching page: {url}")
-    driver.get(url)
-    driver.get(url)
-    try:
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.TAG_NAME, 'body')))  # Ensure the page has loaded
-    except Exception as e:
-        print(f"Error during page load: {e}")
-
-    page_source = driver.page_source
-
-    with open(cache_path, 'w', encoding='utf-8') as file:
-        file.write(page_source)
-
-    return page_source
 
 
 async def fetch_page_async(url, session):
@@ -304,6 +287,7 @@ def parse_data(html_content) -> tuple:
             [group.text.strip() for group in data.find_all("div", id="StudiumSkupina")]
         )
 
+
 def initialize_driver():
     options = webdriver.ChromeOptions()
     options.add_argument('--no-sandbox')
@@ -311,7 +295,7 @@ def initialize_driver():
     return webdriver.Chrome(options=options)
 
 
-def get_id(url, driver):
+async def get_id(url, driver):
     print(f"Getting IDs from URL: {url}")
     driver.get(url)
     driver.get(url)  # Load the URL twice to handle the popup
@@ -324,7 +308,7 @@ def get_id(url, driver):
     return ids
 
 
-def login(driver, url, username, password):
+async def login(driver, url, username, password):
     print(f"Logging in to URL: {url}")
     driver.get(url)
     driver.get(url)  # Load the URL twice to handle the popup
@@ -348,15 +332,19 @@ def login(driver, url, username, password):
     submit.click()
 
 
-def read_existing_systemdata():
+async def read_existing_systemdata():
     if os.path.exists("systemdata.json"):
-        with open("systemdata.json", "r", encoding="utf-8") as f:
-            return json.load(f)
+        async with aiofiles.open("systemdata.json", "r", encoding="utf-8") as f:
+            content = await f.read()
+            if content.strip():  # Check if the file is not empty
+                return json.loads(content)
     return {"users": [], "externalids": []}
 
-def write_systemdata(data):
-    with open("systemdata.json", "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+
+async def write_systemdata(data):
+    async with aiofiles.open("systemdata.json", "w", encoding="utf-8") as f:
+        await f.write(json.dumps(data, ensure_ascii=False, indent=2))
+
 
 def transform_users_to_systemdata(users):
     transformed_users = []
@@ -374,7 +362,7 @@ def transform_users_to_systemdata(users):
     return transformed_users
 
 
-def main_sync():
+async def main():
     ensure_cache_dir()
 
     with open("personal.json") as f:
@@ -387,22 +375,22 @@ def main_sync():
     password = personal['password']
 
     driver = initialize_driver()
-    login(driver, login1Url, user, password)
+    await login(driver, login1Url, user, password)
 
-    ids = get_id(url1, driver)
+    ids = await get_id(url1, driver)
 
     teachers_pattern = re.compile(r'"teachers":(.*?)],"classrooms"')
     teachers_matches = teachers_pattern.findall(ids)
 
     if teachers_matches:
-        userID_teachers  = teachers_matches[0].strip()
+        userID_teachers = teachers_matches[0].strip()
         print("Teachers match found.")
     else:
         print("No teachers match found.")
         return
 
     userIDSplits = userID_teachers.split("},{")
-    
+
     students_pattern = re.compile(r'"students":(.*?)],"teachers"')
     students_matches = students_pattern.findall(ids)
 
@@ -414,73 +402,21 @@ def main_sync():
         print("No students match found.")
         return
 
-    with open("ids.txt", "w") as f:
+    async with aiofiles.open("ids.txt", "w") as f:
         for userIDSplit in userIDSplits:
             print(f"Writing ID: {userIDSplit}")
             user_id = userIDSplit.split(",")
             user_id = user_id[0]
             user_id = remove_chars(user_id, '[{')
             user_id = remove_keyword(user_id, '"id":')
-            f.write(user_id + "\n")
+            await f.write(user_id + "\n")
 
     print("IDs have been written.")
 
-    login(driver, login2Url, user, password)
+    await login(driver, login2Url, user, password)
     print("Logged in, fetching data.")
 
-    systemdata = read_existing_systemdata()
-    users = systemdata["users"]
-    externalids = systemdata.get("externalids", [])
-
-    with open("ids.txt", "r") as f:
-        for line in f:
-            value = line.strip()
-            finalurl = url2 + value
-            page_source = fetch_page_sync(finalurl, driver)
-            print(f"Value: {value}, finalurl: {finalurl}, page_source: {page_source[:100]}")
-            data_tuple = parse_data(page_source)
-            entry_id = generate_uuid()
-            data_dict = {
-                "ID": entry_id,  # Added UUID as ID
-                "Jméno": data_tuple[0],
-                "Titul před / za": data_tuple[1],
-                "Hodnosť / Titul za": data_tuple[2],
-                "Katedra": data_tuple[3],
-                "Email": data_tuple[4],
-                "Telefon": data_tuple[5],
-                "Mobil": data_tuple[6],
-                "Datová schránka": data_tuple[7],
-                "Areál": data_tuple[8],
-                "Budova/Patro/Místnosť": data_tuple[9],
-                "Fakulta": data_tuple[10],
-                "Seznam vyučovaných skupin": data_tuple[11]
-            }
-            if not any("ID" in d and d["ID"] == entry_id for d in users):
-                users.append(data_dict)
-                externalids.append({
-                    "id": generate_uuid(),
-                    "inner_id": entry_id,
-                    "outer_id": value,
-                    "typeid_id": TYPEID_ID
-                })
-
-    systemdata["users"] = transform_users_to_systemdata(users)
-    systemdata["externalids"] = externalids
-
-    write_systemdata(systemdata)
-
-    print("Teachers have been written.")
-    driver.quit()
-
-
-async def main_async():
-    ensure_cache_dir()
-
-    with open("personal.json") as f:
-        personal = json.load(f)
-    url2 = personal['url2']
-
-    systemdata = await read_existing_systemdata_async()
+    systemdata = await read_existing_systemdata()
     users = systemdata["users"]
     externalids = systemdata.get("externalids", [])
 
@@ -507,7 +443,22 @@ async def main_async():
                     "Fakulta": data_tuple[10],
                     "Seznam vyučovaných skupin": data_tuple[11]
                 }
-                if not any("ID" in d and d["ID"] == entry_id for d in users):
+
+                externalid_entry = next((eid for eid in externalids if eid["outer_id"] == value), None)
+
+                if externalid_entry:
+                    # Update existing user
+                    inner_id = externalid_entry["inner_id"]
+                    user_entry = next((user for user in users if user["id"] == inner_id), None)
+                    if user_entry:
+                        if user_entry != data_dict:
+                            for key in data_dict:
+                                user_entry[key] = data_dict[key]
+                    else:
+                        data_dict["id"] = inner_id
+                        users.append(data_dict)
+                else:
+                    # Create new user
                     users.append(data_dict)
                     externalids.append({
                         "id": generate_uuid(),
@@ -519,20 +470,10 @@ async def main_async():
     systemdata["users"] = transform_users_to_systemdata(users)
     systemdata["externalids"] = externalids
 
-    await write_systemdata_async(systemdata)
+    await write_systemdata(systemdata)
 
     print("Teachers have been written.")
-
-async def read_existing_systemdata_async():
-    if os.path.exists("systemdata.json"):
-        async with aiofiles.open("systemdata.json", "r", encoding="utf-8") as f:
-            content = await f.read()
-            return json.loads(content)
-    return {"users": [], "externalids": []}
-
-async def write_systemdata_async(data):
-    async with aiofiles.open("systemdata.json", "w", encoding="utf-8") as f:
-        await f.write(json.dumps(data, ensure_ascii=False, indent=2))
+    driver.quit()
 
 
 async def db_writer_async():
@@ -557,7 +498,6 @@ async def db_writer_async():
 
 
 if __name__ == '__main__':
-    ensure_cache_dir()
-    main_sync()
-    asyncio.run(main_async())
-    #asyncio.run(db_writer_async())
+    #ensure_cache_dir()
+    #asyncio.run(main())
+    asyncio.run(db_writer_async())
